@@ -16,5 +16,9 @@
     "aspect_ratio": "16:9",
     "padding_px": 20
   },
+  "reporting": {
+    "base_url": "http://localhost:5000",
+    "enabled": true
+  },
   "debug_mode": true
 }

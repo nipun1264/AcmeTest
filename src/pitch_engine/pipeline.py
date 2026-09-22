@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from shapely.geometry import Polygon
@@ -36,7 +37,11 @@ class FieldPipeline:
         self._detector = detector
         self._frame_bounds: Polygon | None = None
 
-    def run(self, frames: FrameSource) -> RunSummary:
+    def run(
+        self,
+        frames: FrameSource,
+        on_progress: Callable[[int, int, int], None] | None = None,
+    ) -> RunSummary:
         frames_processed = 0
         no_candidate = 0
         rejected = 0
@@ -59,32 +64,31 @@ class FieldPipeline:
                         f"{consecutive_errors} consecutive frame failures, "
                         f"stopping at frame {frames_processed}"
                     )
+                self._report_progress(frames_processed, frames, valid_detections, on_progress)
                 continue
             consecutive_errors = 0
 
             if detection is None:
                 no_candidate += 1
+                self._report_progress(frames_processed, frames, valid_detections, on_progress)
                 continue
 
             try:
                 polygon = Polygon(detection.polygon)
             except ValueError:
                 rejected += 1
+                self._report_progress(frames_processed, frames, valid_detections, on_progress)
                 continue
             if not polygon.is_valid or touches_all_edges(detection.polygon, frame.shape):
                 rejected += 1
+                self._report_progress(frames_processed, frames, valid_detections, on_progress)
                 continue
 
             bounds = self._frame_bounds_for(frame.shape)
             valid_detections += 1
             overlap_sum += polygon.intersection(bounds).area
 
-            if frames_processed % PROGRESS_INTERVAL == 0:
-                logger.info(
-                    "progress: %d frames processed, %d valid detections",
-                    frames_processed,
-                    valid_detections,
-                )
+            self._report_progress(frames_processed, frames, valid_detections, on_progress)
 
         mean_overlap = overlap_sum / valid_detections if valid_detections else None
         summary = RunSummary(
@@ -104,3 +108,28 @@ class FieldPipeline:
             height, width = shape[0], shape[1]
             self._frame_bounds = Polygon([(0, 0), (width, 0), (width, height), (0, height)])
         return self._frame_bounds
+
+    def _report_progress(
+        self,
+        frames_processed: int,
+        frames: FrameSource,
+        valid_detections: int,
+        on_progress: Callable[[int, int, int], None] | None,
+    ) -> None:
+        # Runs at every PROGRESS_INTERVAL-th frame processed, regardless of
+        # what that frame's own outcome was - a long stretch of rejected or
+        # no-candidate frames must not make an unattended run look stalled.
+        if frames_processed % PROGRESS_INTERVAL != 0:
+            return
+        logger.info(
+            "progress: %d frames processed, %d valid detections",
+            frames_processed,
+            valid_detections,
+        )
+        if on_progress is not None:
+            try:
+                on_progress(frames_processed, frames.frames_skipped, valid_detections)
+            except Exception:
+                # A broken progress callback (e.g. the reporting client)
+                # must never take the actual video processing down with it.
+                logger.warning("on_progress callback raised", exc_info=True)

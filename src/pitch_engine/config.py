@@ -38,11 +38,17 @@ class CropSearchConfig(_StrictModel):
     padding_px: int = Field(ge=0)
 
 
+class ReportingConfig(_StrictModel):
+    base_url: str = Field(min_length=1)
+    enabled: bool = True
+
+
 class AppConfig(_StrictModel):
     video: VideoConfig
     detector: DetectorConfig
     sampling: SamplingConfig
     crop_search: CropSearchConfig
+    reporting: ReportingConfig
     debug_mode: bool
 
 

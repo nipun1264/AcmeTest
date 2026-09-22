@@ -15,6 +15,7 @@ VALID = {
     },
     "sampling": {"frame_stride": 1},
     "crop_search": {"aspect_ratio": "16:9", "padding_px": 20},
+    "reporting": {"base_url": "http://localhost:5000", "enabled": True},
     "debug_mode": True,
 }
 
@@ -53,6 +54,8 @@ def test_valid_config_loads(tmp_path):
         (mutated("sampling", "frame_stride", 0), "sampling.frame_stride"),
         (mutated("crop_search", "aspect_ratio", "widescreen"), "crop_search.aspect_ratio"),
         (mutated("crop_search", "padding_px", -1), "crop_search.padding_px"),
+        (mutated("reporting", "base_url", ...), "reporting.base_url"),
+        (mutated("reporting", "base_url", ""), "reporting.base_url"),
     ],
 )
 def test_bad_config_fails_at_load_time_and_names_the_field(tmp_path, data, expected_location):

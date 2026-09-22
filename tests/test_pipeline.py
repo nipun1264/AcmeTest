@@ -131,3 +131,30 @@ def test_a_recovered_frame_resets_the_consecutive_error_count():
     frames = Frames(make_frame() for _ in range(len(results)))
     summary = FieldPipeline(detector).run(frames)
     assert summary.frames_with_processing_error == 2 * (n - 1)
+
+
+def test_on_progress_callback_is_invoked_at_the_progress_interval():
+    n = pipeline_module.PROGRESS_INTERVAL * 2
+    detector = StubDetector([None] * n)
+    frames = Frames(make_frame() for _ in range(n))
+    calls = []
+
+    FieldPipeline(detector).run(frames, on_progress=lambda *args: calls.append(args))
+
+    assert calls == [
+        (pipeline_module.PROGRESS_INTERVAL, 0, 0),
+        (pipeline_module.PROGRESS_INTERVAL * 2, 0, 0),
+    ]
+
+
+def test_a_broken_on_progress_callback_does_not_crash_the_run():
+    n = pipeline_module.PROGRESS_INTERVAL
+    detector = StubDetector([None] * n)
+    frames = Frames(make_frame() for _ in range(n))
+
+    def bad_callback(*args):
+        raise RuntimeError("reporting is down")
+
+    summary = FieldPipeline(detector).run(frames, on_progress=bad_callback)
+
+    assert summary.frames_processed == n
