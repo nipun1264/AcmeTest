@@ -5,6 +5,8 @@ from typing import Iterator, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from pitch_engine.errors import FatalError
+
 
 class CaptureLike(Protocol):
     def isOpened(self) -> bool: ...
@@ -13,7 +15,7 @@ class CaptureLike(Protocol):
     def release(self) -> None: ...
 
 
-class VideoOpenError(Exception):
+class VideoOpenError(FatalError):
     pass
 
 

@@ -3,7 +3,7 @@ import pytest
 from shapely.geometry import Polygon
 
 import pitch_engine.pipeline as pipeline_module
-from pitch_engine.pipeline import FieldPipeline
+from pitch_engine.pipeline import FieldPipeline, TooManyFrameFailures
 from pitch_engine.detection import Detection
 
 
@@ -19,6 +19,8 @@ class StubDetector:
     def detect(self, frame):
         result = self._results[self.calls]
         self.calls += 1
+        if isinstance(result, Exception):
+            raise result
         return result
 
 
@@ -44,14 +46,16 @@ def test_counts_frames_and_detections():
     summary = FieldPipeline(detector).run(frames)
 
     assert summary.frames_processed == 5
-    assert summary.detections_found == 2
+    assert summary.valid_detections == 2
+    assert summary.frames_with_no_candidate == 3
     assert summary.mean_frame_overlap == pytest.approx((40 * 40 + 20 * 20) / 2)
 
 
 def test_no_detections_reports_none_not_a_crash():
     detector = StubDetector([None, None, None])
     summary = FieldPipeline(detector).run(Frames(make_frame() for _ in range(3)))
-    assert summary.detections_found == 0
+    assert summary.valid_detections == 0
+    assert summary.frames_with_no_candidate == 3
     assert summary.mean_frame_overlap is None
 
 
@@ -90,5 +94,40 @@ def test_invalid_polygon_is_skipped_without_crashing():
     degenerate = Detection(polygon=np.array([[0, 0], [0, 0]]), coverage_ratio=0.1)
     detector = StubDetector([degenerate])
     summary = FieldPipeline(detector).run(Frames([make_frame()]))
-    assert summary.detections_found == 0
-    assert summary.mean_frame_overlap is None
+    assert summary.valid_detections == 0
+    assert summary.frames_with_rejected_detection == 1
+
+
+def test_a_detection_touching_all_frame_edges_is_rejected():
+    height, width = 100, 100
+    full_frame = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]])
+    detector = StubDetector([Detection(polygon=full_frame, coverage_ratio=0.999)])
+    summary = FieldPipeline(detector).run(Frames([make_frame(height, width)]))
+    assert summary.valid_detections == 0
+    assert summary.frames_with_rejected_detection == 1
+
+
+def test_processing_error_is_counted_and_does_not_stop_the_run():
+    detector = StubDetector([RuntimeError("boom"), None, square_detection(0, 0, 10)])
+    frames = Frames(make_frame() for _ in range(3))
+    summary = FieldPipeline(detector).run(frames)
+    assert summary.frames_with_processing_error == 1
+    assert summary.frames_with_no_candidate == 1
+    assert summary.valid_detections == 1
+
+
+def test_too_many_consecutive_processing_errors_is_fatal():
+    n = pipeline_module.MAX_CONSECUTIVE_FRAME_ERRORS
+    detector = StubDetector([RuntimeError("boom")] * n)
+    frames = Frames(make_frame() for _ in range(n))
+    with pytest.raises(TooManyFrameFailures):
+        FieldPipeline(detector).run(frames)
+
+
+def test_a_recovered_frame_resets_the_consecutive_error_count():
+    n = pipeline_module.MAX_CONSECUTIVE_FRAME_ERRORS
+    results = [RuntimeError("boom")] * (n - 1) + [None] + [RuntimeError("boom")] * (n - 1)
+    detector = StubDetector(results)
+    frames = Frames(make_frame() for _ in range(len(results)))
+    summary = FieldPipeline(detector).run(frames)
+    assert summary.frames_with_processing_error == 2 * (n - 1)

@@ -1,18 +1,33 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from shapely.geometry import Polygon
 
 from pitch_engine.detection import FieldDetector
+from pitch_engine.errors import FatalError
+from pitch_engine.validation import touches_all_edges
 from pitch_engine.video import FrameSource
+
+logger = logging.getLogger(__name__)
+
+PROGRESS_INTERVAL = 200
+MAX_CONSECUTIVE_FRAME_ERRORS = 10
+
+
+class TooManyFrameFailures(FatalError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
 class RunSummary:
     frames_processed: int
     frames_skipped: int
-    detections_found: int
+    frames_with_no_candidate: int
+    frames_with_rejected_detection: int
+    frames_with_processing_error: int
+    valid_detections: int
     mean_frame_overlap: float | None
 
 
@@ -23,34 +38,66 @@ class FieldPipeline:
 
     def run(self, frames: FrameSource) -> RunSummary:
         frames_processed = 0
-        detections_found = 0
+        no_candidate = 0
+        rejected = 0
+        processing_errors = 0
+        consecutive_errors = 0
+        valid_detections = 0
         overlap_sum = 0.0
 
         for frame in frames:
             frames_processed += 1
 
-            detection = self._detector.detect(frame)
+            try:
+                detection = self._detector.detect(frame)
+            except Exception:
+                logger.warning("detector raised on frame %d", frames_processed, exc_info=True)
+                processing_errors += 1
+                consecutive_errors += 1
+                if consecutive_errors >= MAX_CONSECUTIVE_FRAME_ERRORS:
+                    raise TooManyFrameFailures(
+                        f"{consecutive_errors} consecutive frame failures, "
+                        f"stopping at frame {frames_processed}"
+                    )
+                continue
+            consecutive_errors = 0
+
             if detection is None:
+                no_candidate += 1
                 continue
 
             try:
                 polygon = Polygon(detection.polygon)
             except ValueError:
+                rejected += 1
                 continue
-            if not polygon.is_valid:
+            if not polygon.is_valid or touches_all_edges(detection.polygon, frame.shape):
+                rejected += 1
                 continue
 
             bounds = self._frame_bounds_for(frame.shape)
-            detections_found += 1
+            valid_detections += 1
             overlap_sum += polygon.intersection(bounds).area
 
-        mean_overlap = overlap_sum / detections_found if detections_found else None
-        return RunSummary(
+            if frames_processed % PROGRESS_INTERVAL == 0:
+                logger.info(
+                    "progress: %d frames processed, %d valid detections",
+                    frames_processed,
+                    valid_detections,
+                )
+
+        mean_overlap = overlap_sum / valid_detections if valid_detections else None
+        summary = RunSummary(
             frames_processed=frames_processed,
             frames_skipped=frames.frames_skipped,
-            detections_found=detections_found,
+            frames_with_no_candidate=no_candidate,
+            frames_with_rejected_detection=rejected,
+            frames_with_processing_error=processing_errors,
+            valid_detections=valid_detections,
             mean_frame_overlap=mean_overlap,
         )
+        logger.info("run complete: %s", summary)
+        return summary
 
     def _frame_bounds_for(self, shape: tuple[int, ...]) -> Polygon:
         if self._frame_bounds is None:

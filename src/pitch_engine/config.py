@@ -6,8 +6,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from pitch_engine.errors import FatalError
 
-class ConfigError(Exception):
+
+class ConfigError(FatalError):
     pass
 
 
