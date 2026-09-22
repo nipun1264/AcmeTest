@@ -50,10 +50,17 @@ class FieldPipeline:
             if detection is None:
                 continue
 
-            polygon = Polygon(detection.polygon)
+            try:
+                polygon = Polygon(detection.polygon)
+            except ValueError:
+                # shapely raises (rather than just marking .is_valid=False)
+                # for coordinates too degenerate to form a ring at all, e.g.
+                # fewer than 3 distinct points. Treated the same as an
+                # invalid polygon below: skip it, don't crash the run. Part 3
+                # will classify and count this explicitly instead of just
+                # dropping it silently.
+                continue
             if not polygon.is_valid:
-                # A malformed contour. Part 3 will classify and count this
-                # explicitly instead of just dropping it silently.
                 continue
 
             bounds = self._frame_bounds_for(frame.shape)
