@@ -1,6 +1,3 @@
-"""Pitch boundary engine: production-shaped library around the field-boundary
-prototype in synthetic_field_prototype.py."""
-
 from pitch_engine.config import AppConfig, ConfigError, load_config
 from pitch_engine.detection import Detection, FieldDetector
 from pitch_engine.detectors import build_detector

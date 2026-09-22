@@ -1,11 +1,3 @@
-"""Thin entry point: parse args, load config, wire the pieces, run.
-
-Replaces synthetic_field_prototype.py's run_pipeline()/`if __name__ ==
-"__main__"` block. Unlike the prototype, this does not generate the video
-itself - the pipeline's job is to process a feed, not to fabricate test
-fixtures. Run `python synthetic_generator.py` once beforehand (see README).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -24,7 +16,7 @@ EXIT_VIDEO_NOT_FOUND = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="pitch-engine", description=__doc__)
+    parser = argparse.ArgumentParser(prog="pitch-engine")
     parser.add_argument("--config", required=True, help="Path to the JSON config file")
     return parser
 
@@ -32,7 +24,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    # Fail fast: nothing below runs unless the whole config is valid.
     try:
         config = load_config(args.config)
     except ConfigError as exc:

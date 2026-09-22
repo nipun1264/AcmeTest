@@ -8,19 +8,10 @@ from pitch_engine.detection import Detection
 
 
 class Frames(list):
-    """A list that also satisfies what FieldPipeline.run() needs from a real
-    FrameSource: a .frames_skipped count (FrameSource itself is exercised
-    separately in test_video.py; this just isolates the pipeline's own
-    bookkeeping from frame sampling)."""
-
     frames_skipped = 0
 
 
 class StubDetector:
-    """Returns a fixed sequence of detections/None, one per call, ignoring
-    the frame's actual content - lets the pipeline's own bookkeeping be
-    tested independently of any real detection logic."""
-
     def __init__(self, results):
         self._results = list(results)
         self.calls = 0
@@ -75,10 +66,6 @@ def test_frames_skipped_is_read_from_the_frame_source():
 
 
 def test_frame_bounds_polygon_is_built_once_not_once_per_frame(monkeypatch):
-    # The prototype rebuilt the frame-bounds rectangle on every single frame.
-    # This proves the fix: with N detections, Polygon() should be called
-    # N + 1 times (once per detected polygon, plus exactly one for the
-    # shared frame bounds) - not 2N times.
     call_count = {"n": 0}
     real_polygon = pipeline_module.Polygon
 
@@ -100,7 +87,6 @@ def test_frame_bounds_polygon_is_built_once_not_once_per_frame(monkeypatch):
 
 
 def test_invalid_polygon_is_skipped_without_crashing():
-    # Fewer than 3 distinct usable points -> not a valid polygon.
     degenerate = Detection(polygon=np.array([[0, 0], [0, 0]]), coverage_ratio=0.1)
     detector = StubDetector([degenerate])
     summary = FieldPipeline(detector).run(Frames([make_frame()]))

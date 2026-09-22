@@ -1,20 +1,3 @@
-"""Pipeline core: runs a detector over sampled frames and aggregates the result.
-
-Two behavioral fixes versus FieldBoundaryAnalyzer.process_video, both
-Part 2 (efficiency) work:
-
-1. Frame sampling: iterating `frames` (a FrameSource) already skips frames
-   cheaply instead of decoding every one - see video.py.
-2. The prototype rebuilt an identical `outer_boundary` Polygon on every
-   single frame:
-       outer_boundary = Polygon([(0, 0), (1280, 0), (1280, 720), (0, 720)])
-   even though the frame size never changes mid-run. _frame_bounds_for()
-   below builds it once and reuses it - the same discipline the assignment
-   asks for on "any other expensive calculation performed more than once".
-
-Knows nothing about config files, the CLI, or which detector it was given.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,10 +10,10 @@ from pitch_engine.video import FrameSource
 
 @dataclass(frozen=True, slots=True)
 class RunSummary:
-    frames_processed: int  # frames actually decoded and inspected
-    frames_skipped: int  # frames skipped via a cheap grab() (frame_stride > 1)
+    frames_processed: int
+    frames_skipped: int
     detections_found: int
-    mean_frame_overlap: float | None  # mean of (polygon intersect frame bounds) area
+    mean_frame_overlap: float | None
 
 
 class FieldPipeline:
@@ -53,12 +36,6 @@ class FieldPipeline:
             try:
                 polygon = Polygon(detection.polygon)
             except ValueError:
-                # shapely raises (rather than just marking .is_valid=False)
-                # for coordinates too degenerate to form a ring at all, e.g.
-                # fewer than 3 distinct points. Treated the same as an
-                # invalid polygon below: skip it, don't crash the run. Part 3
-                # will classify and count this explicitly instead of just
-                # dropping it silently.
                 continue
             if not polygon.is_valid:
                 continue
